@@ -10,7 +10,7 @@ class MyntraScraper:
         self.base_url = base_url.rstrip('/')
         self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         self.mensClothing = ['tshirts', 'casual-shirts', 'formal-shirts', 'sweatshirts', 'sweaters', 'jackets', 'blazers', 'suits', 'rain-jacket','jeans', 'casual-trousers', 'formal-trousers', 'shorts', 'trackpants']
-        self.womensClothing = ['women-kurtas-kurtis-suits','ethnic-tops','saree','women-ethnic-wear','women-ethnic-bottomwear','skirts-palazzos','lehenga-choli','dupatta-shawl','women-jackets']
+        self.womensClothing = ['women-kurtas-kurtis-suits','ethnic-tops','saree','skirts-palazzos','lehenga-choli','dupatta-shawl','women-jackets']
         self.imageCount = 0
     
     def getClothingAndDescription(self, type: str, clothing: str, n: int, start_page: int = 4, end_page: int = 10):
