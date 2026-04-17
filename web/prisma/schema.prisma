@@ -1,0 +1,330 @@
+// Fashion For Everyone — Prisma schema
+//
+// Postgres-backed schema for an AI fashion stylist chat app.
+// All primary keys are UUIDs. User → owned data uses onDelete: Cascade so
+// deleting a user (e.g. via Clerk webhook) cleans up everything.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // DIRECT_URL is used by `prisma migrate` when DATABASE_URL goes through a
+  // pooler (PgBouncer / Supabase / Neon) and migrations need a non-pooled
+  // connection. Falls back to DATABASE_URL if unset at runtime.
+  directUrl  = env("DIRECT_URL")
+  extensions = [citext, pgcrypto]
+}
+
+// ---------- Enums ----------
+
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
+enum GenerationStatus {
+  pending
+  completed
+  failed
+}
+
+enum AssetKind {
+  user_upload
+  generated
+  reference
+}
+
+enum WardrobeCategory {
+  top
+  bottom
+  outerwear
+  dress
+  footwear
+  accessory
+  underwear
+  swimwear
+  activewear
+  other
+}
+
+enum Gender {
+  female
+  male
+  non_binary
+  prefer_not_to_say
+}
+
+enum CreditTxnKind {
+  grant
+  consume
+  refund
+  adjustment
+}
+
+// ---------- User & profile ----------
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  // Clerk's user id — the link from the auth system.
+  clerkId         String   @unique
+  // Case-insensitive email so "Foo@x.com" and "foo@x.com" collide.
+  email           String?  @unique @db.Citext
+  username        String?  @unique @db.Citext
+  firstName       String?
+  lastName        String?
+  imageUrl        String?  @db.Text
+
+  // Style preferences for personalization. Kept as concrete columns when they
+  // drive prompts/filtering; flexible extras live in `preferences` JSONB.
+  gender          Gender?
+  bodyType        String?  // "pear", "athletic", "rectangle", etc. — free-form for v1.
+  size            String?  // "S", "M", "L", "EU 38", etc.
+  heightCm        Int?
+  weightKg        Int?
+  favoriteColors  String[] @default([])
+  styleTags       String[] @default([])
+  preferences     Json     @default("{}")
+
+  // Per-user generation quota. We reset/refill via cron; the columns are kept
+  // here for cheap reads on every request.
+  monthlyQuota    Int      @default(50)
+  creditsBalance  Int      @default(50)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  chats           Chat[]
+  messages        Message[]
+  prompts         Prompt[]
+  generatedImages GeneratedImage[]
+  assets          Asset[]
+  wardrobeItems   WardrobeItem[]
+  favorites       Favorite[]
+  creditTxns      CreditTransaction[]
+  apiKeys         ApiKey[]
+
+  @@index([createdAt])
+}
+
+// ---------- Chat (a "Fitting" thread) ----------
+
+model Chat {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  title     String    @default("New Fitting")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  // Soft delete — keep rows around for undo/history but hide from lists.
+  deletedAt DateTime?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  // Hot path: list a user's chats sorted by recency.
+  @@index([userId, updatedAt(sort: Desc)])
+  @@index([userId, deletedAt])
+}
+
+// ---------- Message ----------
+
+model Message {
+  id        String      @id @default(uuid()) @db.Uuid
+  chatId    String      @db.Uuid
+  userId    String      @db.Uuid
+  role      MessageRole
+  // Text can be long (assistant replies, system summaries). Use TEXT not VARCHAR.
+  text      String      @db.Text
+  // Monotonic ordering inside a chat — populated server-side as count+1.
+  ordering  Int
+  error     Boolean     @default(false)
+  createdAt DateTime    @default(now())
+
+  chat            Chat             @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt          Prompt?
+  generatedImages GeneratedImage[]
+
+  @@unique([chatId, ordering])
+  @@index([chatId, createdAt])
+  @@index([userId])
+}
+
+// ---------- Prompt (the actual model input) ----------
+// Separate from Message because we may augment the user's text with system
+// templates, style preferences, wardrobe context, etc. before sending.
+
+model Prompt {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  // Nullable so the legacy /api/generate (no chat context) can persist a
+  // Prompt without an owning Message. Within a chat we always set this.
+  messageId     String?  @unique @db.Uuid
+  // The exact text sent to the model.
+  text          String   @db.Text
+  // What the user actually typed, before augmentation.
+  rawUserInput  String?  @db.Text
+  // Model name, version, system prompt id, etc.
+  model         String
+  systemPrompt  String?  @db.Text
+  // Anything else (negative_prompt, seed, cfg, steps, lora_strength, …).
+  params        Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message         Message?         @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  generatedImages GeneratedImage[]
+
+  @@index([userId, createdAt])
+}
+
+// ---------- GeneratedImage ----------
+
+model GeneratedImage {
+  id            String           @id @default(uuid()) @db.Uuid
+  userId        String           @db.Uuid
+  promptId      String?          @db.Uuid
+  // Nullable so we can persist a placeholder row before the assistant message
+  // exists, then update it; in normal flow this is set.
+  messageId     String?          @db.Uuid
+
+  url           String           @db.Text
+  thumbnailUrl  String?          @db.Text
+  width         Int?
+  height        Int?
+  model         String
+  loraUrl       String?          @db.Text
+  // Full param snapshot for reproducibility.
+  params        Json             @default("{}")
+
+  status        GenerationStatus @default(pending)
+  failureReason String?          @db.Text
+  nsfw          Boolean          @default(false)
+  // Provider-side job id (fal.ai request_id) for debugging.
+  providerJobId String?
+
+  createdAt     DateTime         @default(now())
+  completedAt   DateTime?
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt    Prompt?    @relation(fields: [promptId], references: [id], onDelete: SetNull)
+  message   Message?   @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  favorites Favorite[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+  @@index([promptId])
+}
+
+// ---------- Asset (user uploads / reference images) ----------
+// One table for any blob the user owns. WardrobeItem references this for the
+// source photo of a closet item.
+
+model Asset {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  kind        AssetKind @default(user_upload)
+  url         String    @db.Text
+  mimeType    String?
+  sizeBytes   Int?
+  width       Int?
+  height      Int?
+  // Optional human-friendly label, e.g. "blue blazer 2024".
+  label       String?
+  // Free-form metadata (storage provider, exif, hash, …).
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wardrobeItems WardrobeItem[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, kind])
+}
+
+// ---------- WardrobeItem (smart closet) ----------
+
+model WardrobeItem {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  assetId   String?          @db.Uuid
+
+  name      String
+  category  WardrobeCategory
+  color     String?
+  brand     String?
+  size      String?
+  season    String?           // "spring", "summer", "fall", "winter", "all".
+  tags      String[]          @default([])
+  notes     String?           @db.Text
+
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([userId, category])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// ---------- Favorite / SavedLook ----------
+
+model Favorite {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  generatedImageId String   @db.Uuid
+  // Optional user-supplied label for the saved look.
+  label            String?
+  createdAt        DateTime @default(now())
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generatedImage GeneratedImage @relation(fields: [generatedImageId], references: [id], onDelete: Cascade)
+
+  // A user can only favorite a given image once.
+  @@unique([userId, generatedImageId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// ---------- Credits / quota ----------
+// We keep a running balance on User for cheap reads, and a ledger here for
+// auditing / refunds when generation fails.
+
+model CreditTransaction {
+  id        String        @id @default(uuid()) @db.Uuid
+  userId    String        @db.Uuid
+  kind      CreditTxnKind
+  amount    Int           // positive for grant/refund, negative for consume.
+  reason    String?
+  // Free-form link, e.g. { "generatedImageId": "..." }.
+  metadata  Json          @default("{}")
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// ---------- ApiKey (BYO provider) ----------
+// Optional v1: lets a power user attach their own provider key so generations
+// don't count against shared quota. Stored encrypted at rest by the app
+// layer (encryptedKey is opaque ciphertext — never log it).
+
+model ApiKey {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  provider      String   // "fal" | "openai" | …
+  // Last 4 chars of the key for display (e.g. "•••• 1f3c").
+  label         String?
+  encryptedKey  String   @db.Text
+  createdAt     DateTime @default(now())
+  lastUsedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider])
+}

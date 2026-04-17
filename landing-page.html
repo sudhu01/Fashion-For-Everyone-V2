@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Editorial Concierge | Fashion For Everyone</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&amp;family=Manrope:wght@400;500;600;800&amp;display=swap" rel="stylesheet"/>
+<!-- Icons -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-dim": "#6b4900",
+                    "on-tertiary-fixed-variant": "#5b3e00",
+                    "tertiary": "#7a5400",
+                    "on-error": "#ffefec",
+                    "on-background": "#2d2f2f",
+                    "surface-variant": "#dbdddd",
+                    "on-secondary-fixed-variant": "#7f3f00",
+                    "background": "#f6f6f6",
+                    "secondary-fixed-dim": "#ffb37c",
+                    "surface-tint": "#9b3f00",
+                    "on-secondary": "#fff0e8",
+                    "on-tertiary-container": "#4f3600",
+                    "on-tertiary": "#fff1df",
+                    "on-primary-fixed-variant": "#4f1d00",
+                    "primary-dim": "#883700",
+                    "surface-container-highest": "#dbdddd",
+                    "inverse-surface": "#0c0f0f",
+                    "outline": "#767777",
+                    "primary": "#9b3f00",
+                    "inverse-on-surface": "#9c9d9d",
+                    "tertiary-fixed": "#f7b21f",
+                    "on-primary-fixed": "#000000",
+                    "secondary-dim": "#7e3f00",
+                    "on-tertiary-fixed": "#342200",
+                    "on-primary-container": "#401600",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary-fixed": "#ffc69f",
+                    "outline-variant": "#acadad",
+                    "surface-container-low": "#f0f1f1",
+                    "surface": "#f6f6f6",
+                    "tertiary-fixed-dim": "#e7a407",
+                    "on-primary": "#fff0ea",
+                    "primary-fixed-dim": "#f46800",
+                    "primary-fixed": "#ff7a2c",
+                    "surface-container-high": "#e1e3e3",
+                    "secondary": "#8f4800",
+                    "primary-container": "#ff7a2c",
+                    "surface-dim": "#d3d5d5",
+                    "on-surface-variant": "#5a5c5c",
+                    "on-surface": "#2d2f2f",
+                    "secondary-container": "#ffc69f",
+                    "on-secondary-fixed": "#552800",
+                    "error-container": "#f95630",
+                    "error": "#b02500",
+                    "on-error-container": "#520c00",
+                    "tertiary-container": "#f7b21f",
+                    "surface-bright": "#f6f6f6",
+                    "surface-container": "#e7e8e8",
+                    "on-secondary-container": "#713800",
+                    "error-dim": "#b92902",
+                    "inverse-primary": "#fd6c00"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Plus Jakarta Sans"],
+                    "body": ["Manrope"],
+                    "label": ["Manrope"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .editorial-gradient {
+            background: linear-gradient(135deg, #9b3f00 0%, #ff7a2c 100%);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar -->
+<header class="fixed top-0 w-full z-50 bg-white/80 dark:bg-stone-900/80 backdrop-blur-xl shadow-sm dark:shadow-none">
+<nav class="flex justify-between items-center px-6 py-4 max-w-7xl mx-auto font-['Plus_Jakarta_Sans'] tracking-tight">
+<div class="text-2xl font-bold tracking-tighter text-stone-900 dark:text-stone-50">Editorial Concierge</div>
+<div class="hidden md:flex items-center gap-8">
+<a class="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 transition-all duration-300 hover:opacity-80" href="#">Collections</a>
+<a class="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 transition-all duration-300 hover:opacity-80" href="#">Style Guide</a>
+<a class="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 transition-all duration-300 hover:opacity-80" href="#">About</a>
+<a class="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 transition-all duration-300 hover:opacity-80" href="#">Atelier</a>
+</div>
+<div class="flex items-center gap-5">
+<span class="material-symbols-outlined text-stone-600 dark:text-stone-400 cursor-pointer hover:text-primary transition-colors">shopping_bag</span>
+<span class="material-symbols-outlined text-stone-600 dark:text-stone-400 cursor-pointer hover:text-primary transition-colors">person</span>
+<button class="editorial-gradient text-on-primary font-semibold px-6 py-2.5 rounded-full shadow-lg shadow-primary/20 scale-95 duration-200 active:opacity-70">
+                    Get Started
+                </button>
+</div>
+</nav>
+</header>
+<main class="pt-24">
+<!-- Hero Section -->
+<section class="relative px-6 py-16 md:py-32 max-w-7xl mx-auto overflow-hidden">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+<div class="relative z-10">
+<div class="inline-flex items-center gap-2 px-3 py-1 bg-surface-container-high rounded-full mb-6">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="text-xs font-bold uppercase tracking-widest text-on-surface-variant font-label">The Digital Atelier</span>
+</div>
+<h1 class="text-5xl md:text-7xl font-extrabold font-headline leading-[1.1] mb-8 text-on-surface tracking-tight">
+                        Your personal <span class="text-primary italic">atelier</span>, powered by AI.
+                    </h1>
+<p class="text-lg md:text-xl text-on-surface-variant mb-10 max-w-lg leading-relaxed">
+                        Precision tailoring meets predictive intelligence. We curate your wardrobe with the soul of a stylist and the speed of a supercomputer.
+                    </p>
+<div class="flex flex-col sm:flex-row gap-4">
+<button class="editorial-gradient text-on-primary font-bold text-lg px-8 py-4 rounded-full shadow-xl shadow-primary/20 transition-transform active:scale-95">
+                            Start your consultation
+                        </button>
+<button class="bg-surface-container-highest text-on-surface font-bold text-lg px-8 py-4 rounded-full transition-transform active:scale-95">
+                            View Collections
+                        </button>
+</div>
+</div>
+<div class="relative">
+<div class="aspect-[4/5] rounded-xl overflow-hidden bg-surface-container-low shadow-2xl relative">
+<img alt="Fashion model" class="w-full h-full object-cover" data-alt="High fashion photography of a model wearing a structured orange blazer and minimalist jewelry, soft warm studio lighting, editorial style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJ9BQXYjtNKBO-dmH8g380sSUjMlpP_yo0a43osRGfJwIBCJYVa7v9AjnW0OmeGp5JrIItY3QL8Q_RotSzPXdEGnDOWhrnwstcGS4D3NWuP_iNmQHDxdtY79Wko4oW6bsQ9nnDGDLwiPPiQBmuyCovUmbbOgK-iyP5IZV6TOj7clOYOX3CY2BpKKWai-C-7Ux-KpA3xyMySUfwGT4K4BwWNZa2vfvFL_O-UcG1dEeGvm3dbxj8IjOoBp9qRoMjF4-JODfkmwFDqSo2"/>
+<div class="absolute bottom-6 left-6 right-6 p-6 bg-white/20 backdrop-blur-xl rounded-xl border border-white/30">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary-fixed" data-weight="fill">auto_awesome</span>
+</div>
+<div>
+<p class="text-sm font-bold text-stone-900">AI Recommendation</p>
+<p class="text-xs text-stone-800">Couture Silk Scarf, Ember Collection</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Decorative Element -->
+<div class="absolute -top-10 -right-10 w-40 h-40 bg-tertiary-fixed-dim/20 blur-3xl rounded-full -z-10"></div>
+</div>
+</div>
+</section>
+<!-- Social Proof -->
+<section class="py-12 bg-surface-container-low">
+<div class="max-w-7xl mx-auto px-6">
+<p class="text-center font-label text-xs uppercase tracking-[0.2em] text-on-surface-variant mb-10">As seen in global fashion circles</p>
+<div class="flex flex-wrap justify-center gap-12 md:gap-24 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+<span class="text-2xl font-black font-headline tracking-tighter">VOGUE</span>
+<span class="text-2xl font-black font-headline tracking-tighter italic">ELLE</span>
+<span class="text-2xl font-black font-headline tracking-tighter">BAZAAR</span>
+<span class="text-2xl font-black font-headline tracking-tighter">GQ</span>
+<span class="text-2xl font-black font-headline tracking-tighter">NYFW</span>
+</div>
+</div>
+</section>
+<!-- Features: Bento Grid Style -->
+<section class="py-24 px-6 max-w-7xl mx-auto">
+<div class="text-center mb-20">
+<h2 class="text-4xl md:text-5xl font-extrabold font-headline mb-4">Precision Craftsmanship</h2>
+<p class="text-on-surface-variant text-lg">Every detail designed for the modern wardrobe.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+<!-- AI Styling -->
+<div class="md:col-span-8 bg-surface-container-lowest rounded-xl p-8 flex flex-col justify-between group overflow-hidden">
+<div>
+<span class="material-symbols-outlined text-primary text-4xl mb-6">psychology</span>
+<h3 class="text-2xl font-bold mb-4">Cognitive AI Styling</h3>
+<p class="text-on-surface-variant max-w-md">Our neural engine learns your aesthetic preferences, body architecture, and lifestyle to suggest silhouettes that resonate with your personal brand.</p>
+</div>
+<div class="mt-12 relative">
+<div class="flex gap-4">
+<div class="w-48 h-64 rounded-lg bg-surface-container overflow-hidden">
+<img alt="Styled look" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="Full body shot of a woman in a minimalist beige and orange street wear outfit, soft daylight, high-end fashion vibe" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCdTmo2uUdknaSdFTl3d6mqnq3jTrPdnJAQZWKntnzc33Yb5QNwclmk8XiDC57dnCQTtCm9Gq2iRGXiCtp_wt0DHMO43DA5Gvjv-pTWiSfwrf9sdbP0MshGv4nqzRbrCHcO7YqgeCVXb2GSGZC1s6X4iBFIqABzF7Q7iEAioAje56_YyTbUKxKtQCdMJCDIRJnFvRgpWW9e-d_tH4_e5ZTZdZzkwbbUG5Oe_wvImvoqPXOZdQv0iUSyHLD4igcAqkO0SMJOAWCSgIFR"/>
+</div>
+<div class="w-48 h-64 rounded-lg bg-surface-container overflow-hidden translate-y-8">
+<img alt="Styled look" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="Close up of high quality designer leather bag and accessories on a minimal display, warm citrus color palette" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXa0yxEZ0NGQyRFPmOK69VgkXNo22bRW1QdAmt31tX-whVMlyQFqp4OgL5EPnHJy_XXE1NBVBMzR_5ZsSvJrcm5nzZFGzUcBjvESLDPDxhYjHkVNO9tg8kjRqpKpnJmWf9KSybtt6t0BU3mM4uyD2kOkmhK2uME5nU1NCtfx62X7AhHU72HsRI1sA7bMX8rQJXtm-yO1iZsEgcYTL8XeNReeQCtHp3ojqSBQASVPYDBsSk0u8-GALWTvPFZ8_IESzwi2dAUVXR2POt"/>
+</div>
+</div>
+</div>
+</div>
+<!-- Smart Closet -->
+<div class="md:col-span-4 bg-primary text-on-primary rounded-xl p-8 flex flex-col justify-between shadow-2xl shadow-primary/30">
+<span class="material-symbols-outlined text-4xl mb-6">inventory_2</span>
+<div>
+<h3 class="text-2xl font-bold mb-4">Smart Closet Integration</h3>
+<p class="opacity-80">Digitize your existing wardrobe. Our AI visualizes new pairings so you never say "I have nothing to wear" again.</p>
+</div>
+</div>
+<!-- Trend Alerts -->
+<div class="md:col-span-4 bg-surface-container-high rounded-xl p-8">
+<span class="material-symbols-outlined text-primary text-4xl mb-6">notifications_active</span>
+<h3 class="text-2xl font-bold mb-4">Real-time Trend Alerts</h3>
+<p class="text-on-surface-variant">Stay ahead of the curve with predictive alerts for drops that match your unique style profile.</p>
+</div>
+<!-- Interactive Atelier -->
+<div class="md:col-span-8 bg-surface-container-low rounded-xl p-8 border border-outline-variant/10">
+<div class="flex flex-col md:flex-row gap-8 items-center">
+<div class="flex-1">
+<h3 class="text-2xl font-bold mb-4">The Atelier Studio</h3>
+<p class="text-on-surface-variant">Virtually swap fabrics, colors, and textures on curated garments before you even consider a purchase.</p>
+</div>
+<div class="flex-1 w-full grid grid-cols-3 gap-2">
+<div class="aspect-square rounded-full bg-orange-200 border-2 border-white"></div>
+<div class="aspect-square rounded-full bg-orange-500 border-2 border-white"></div>
+<div class="aspect-square rounded-full bg-stone-800 border-2 border-white"></div>
+<div class="aspect-square rounded-full bg-stone-300 border-2 border-white"></div>
+<div class="aspect-square rounded-full bg-orange-700 border-2 border-white"></div>
+<div class="aspect-square rounded-full bg-white border-2 border-white"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- How it works -->
+<section class="py-24 bg-white">
+<div class="max-w-7xl mx-auto px-6">
+<div class="text-center mb-20">
+<h2 class="text-4xl font-extrabold font-headline">The Concierge Journey</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+<div class="relative group">
+<div class="text-8xl font-black text-surface-container absolute -top-12 -left-4 z-0 group-hover:text-primary-fixed-dim/20 transition-colors">01</div>
+<div class="relative z-10 pt-4">
+<h4 class="text-xl font-bold mb-4">Chat with Your Muse</h4>
+<p class="text-on-surface-variant leading-relaxed">Tell our AI about your mood, the event, or your inspiration. It understands style like a seasoned creative director.</p>
+</div>
+</div>
+<div class="relative group">
+<div class="text-8xl font-black text-surface-container absolute -top-12 -left-4 z-0 group-hover:text-primary-fixed-dim/20 transition-colors">02</div>
+<div class="relative z-10 pt-4">
+<h4 class="text-xl font-bold mb-4">Curate Your Canvas</h4>
+<p class="text-on-surface-variant leading-relaxed">Review three tailored "Look-Books" generated specifically for you. Swap items with a single gesture.</p>
+</div>
+</div>
+<div class="relative group">
+<div class="text-8xl font-black text-surface-container absolute -top-12 -left-4 z-0 group-hover:text-primary-fixed-dim/20 transition-colors">03</div>
+<div class="relative z-10 pt-4">
+<h4 class="text-xl font-bold mb-4">Wear Your Identity</h4>
+<p class="text-on-surface-variant leading-relaxed">Shop the pieces you love or use your current wardrobe to recreate the curated aesthetic instantly.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Final CTA Section -->
+<section class="py-32 px-6">
+<div class="max-w-5xl mx-auto editorial-gradient rounded-[2.5rem] p-12 md:p-24 text-center text-on-primary shadow-2xl relative overflow-hidden">
+<!-- Abstract patterns -->
+<div class="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+<div class="absolute bottom-0 left-0 w-96 h-96 bg-black/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+<div class="relative z-10">
+<h2 class="text-4xl md:text-6xl font-extrabold font-headline mb-8 leading-tight">Elevate your style today.</h2>
+<p class="text-xl mb-12 text-on-primary/80 max-w-2xl mx-auto">Join the world's most exclusive digital atelier and redefine how you experience fashion.</p>
+<button class="bg-white text-primary font-bold text-xl px-12 py-5 rounded-full shadow-2xl hover:bg-stone-50 transition-colors active:scale-95">
+                        Get Your Invitation
+                    </button>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="w-full py-12 px-8 bg-stone-100 dark:bg-stone-950 font-['Manrope'] text-sm uppercase tracking-widest mt-12">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-8 max-w-7xl mx-auto">
+<div class="md:col-span-1">
+<div class="text-lg font-black text-stone-800 dark:text-stone-200 mb-6">Editorial Concierge</div>
+<p class="normal-case text-stone-500 tracking-normal mb-6">Democratizing luxury through the lens of artificial intelligence.</p>
+</div>
+<div>
+<h5 class="font-bold text-orange-700 dark:text-orange-500 mb-6">Experience</h5>
+<ul class="space-y-4">
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Digital Atelier</a></li>
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Wardrobe AI</a></li>
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Style Guide</a></li>
+</ul>
+</div>
+<div>
+<h5 class="font-bold text-orange-700 dark:text-orange-500 mb-6">Company</h5>
+<ul class="space-y-4">
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Contact</a></li>
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Instagram</a></li>
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Careers</a></li>
+</ul>
+</div>
+<div>
+<h5 class="font-bold text-orange-700 dark:text-orange-500 mb-6">Legal</h5>
+<ul class="space-y-4">
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Privacy</a></li>
+<li><a class="text-stone-500 dark:text-stone-500 hover:text-orange-500 transition-colors" href="#">Terms</a></li>
+</ul>
+</div>
+</div>
+<div class="max-w-7xl mx-auto mt-12 pt-8 border-t border-stone-200 dark:border-stone-800 flex flex-col md:flex-row justify-between items-center gap-4">
+<p class="text-stone-400">© 2024 The Editorial Concierge. All rights reserved.</p>
+<div class="flex gap-6">
+<span class="material-symbols-outlined text-stone-400 cursor-pointer hover:text-primary">language</span>
+<span class="material-symbols-outlined text-stone-400 cursor-pointer hover:text-primary">share</span>
+</div>
+</div>
+</footer>
+</body></html>
