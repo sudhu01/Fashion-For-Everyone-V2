@@ -35,8 +35,11 @@ const LORA_STRENGTH = Number(process.env.LORA_STRENGTH ?? 0.85);
 // variants can push 2–3 min; default generously.
 const UPSTREAM_TIMEOUT_MS = Number(process.env.FAL_TIMEOUT_MS ?? 300_000);
 const POLL_INTERVAL_MS = Number(process.env.FAL_POLL_MS ?? 2_000);
-const DEFAULT_STEPS = Number(process.env.FAL_STEPS ?? 28);
-const DEFAULT_GUIDANCE = Number(process.env.FAL_GUIDANCE ?? 3.5);
+// FLUX.2 Klein is a distilled variant (like Schnell): it accepts 1–8 steps
+// and wants guidance_scale ≈ 1.0 (no classifier-free guidance). If you swap
+// to a non-distilled FLUX checkpoint, bump these via env to 28 / 3.5.
+const DEFAULT_STEPS = Number(process.env.FAL_STEPS ?? 4);
+const DEFAULT_GUIDANCE = Number(process.env.FAL_GUIDANCE ?? 1.0);
 const DEFAULT_IMAGE_SIZE = process.env.FAL_IMAGE_SIZE ?? "portrait_4_3";
 
 const MAX_URL_LEN = 4096;
