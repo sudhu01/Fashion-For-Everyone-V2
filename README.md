@@ -390,3 +390,23 @@ FAL_POLL_MS="2000"                     # Polling interval
 RATE_LIMIT_CAPACITY="10"
 RATE_LIMIT_REFILL_PER_SEC="0.1"
 ```
+
+---
+
+## Sample Screenshots
+
+### Landing Page
+
+![Landing page — "Fashion at your fingertips" hero with full-bleed wardrobe photography](web/public/Screenshot%201.png)
+
+### The Atelier — Empty State
+
+![Chat interface before a fitting is started, showing the sidebar, "New Fitting" button, and prompt input](web/public/Screenshot%202.png)
+
+### Generated Look — Relaxed Fit Orange Shirt
+
+![Generated front and back views of a relaxed fit orange shirt with a floral design](web/public/Screenshot%203.png)
+
+### Magnifier Lens — Bluish Regular Fit Polo
+
+![Hover magnifier activated on the front view of a bluish regular fit polo shirt, showing 2.5× zoom detail panel](web/public/Screenshot%204.png)
