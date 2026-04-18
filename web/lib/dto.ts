@@ -12,7 +12,12 @@ export interface MessageDTO {
   chatId: string;
   role: Role;
   text: string;
+  // `imageUrl` is the primary (front) view and is kept for back-compat with
+  // single-image consumers. `frontImageUrl` / `backImageUrl` are the full
+  // pair — every assistant turn now renders both views.
   imageUrl?: string;
+  frontImageUrl?: string;
+  backImageUrl?: string;
   ordering: number;
   error: boolean;
   createdAt: number; // epoch ms

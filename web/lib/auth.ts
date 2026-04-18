@@ -41,6 +41,27 @@ export async function requireAuth(): Promise<AuthContext> {
     cu?.emailAddresses[0]?.emailAddress ??
     null;
 
+  // If a row already exists with this email (e.g. the user deleted their
+  // Clerk account and re-signed up, or linked a new OAuth provider with the
+  // same email), rebind it to the new clerkId rather than colliding on the
+  // email unique constraint.
+  if (email) {
+    const byEmail = await prisma.user.findUnique({ where: { email } });
+    if (byEmail) {
+      const rebound = await prisma.user.update({
+        where: { id: byEmail.id },
+        data: {
+          clerkId,
+          username: cu?.username ?? byEmail.username ?? undefined,
+          firstName: cu?.firstName ?? byEmail.firstName ?? undefined,
+          lastName: cu?.lastName ?? byEmail.lastName ?? undefined,
+          imageUrl: cu?.imageUrl ?? byEmail.imageUrl ?? undefined,
+        },
+      });
+      return { userId: rebound.id, clerkId, dbUser: rebound };
+    }
+  }
+
   const created = await prisma.user.upsert({
     where: { clerkId },
     create: {

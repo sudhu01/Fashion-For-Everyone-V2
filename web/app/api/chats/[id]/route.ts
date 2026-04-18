@@ -29,8 +29,8 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
           include: {
             generatedImages: {
               where: { status: "completed" },
-              select: { url: true },
-              take: 1,
+              select: { url: true, params: true, completedAt: true },
+              orderBy: { completedAt: "asc" },
             },
           },
         },
@@ -44,16 +44,21 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
         title: chat.title,
         createdAt: chat.createdAt.getTime(),
         updatedAt: chat.updatedAt.getTime(),
-        messages: chat.messages.map((m) => ({
-          id: m.id,
-          chatId: m.chatId,
-          role: m.role,
-          text: m.text,
-          ordering: m.ordering,
-          error: m.error,
-          imageUrl: m.generatedImages[0]?.url,
-          createdAt: m.createdAt.getTime(),
-        })),
+        messages: chat.messages.map((m) => {
+          const { frontUrl, backUrl } = pickViewUrls(m.generatedImages);
+          return {
+            id: m.id,
+            chatId: m.chatId,
+            role: m.role,
+            text: m.text,
+            ordering: m.ordering,
+            error: m.error,
+            imageUrl: frontUrl ?? backUrl,
+            frontImageUrl: frontUrl,
+            backImageUrl: backUrl,
+            createdAt: m.createdAt.getTime(),
+          };
+        }),
       },
     });
   } catch (err) {
@@ -79,6 +84,26 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   } catch (err) {
     return handleError(err);
   }
+}
+
+// Splits a message's completed GeneratedImage rows into front/back by reading
+// `params.view`. Legacy single-view rows (no params) fall back to insertion
+// order: first becomes front, second becomes back.
+function pickViewUrls(
+  images: { url: string; params: unknown }[],
+): { frontUrl: string | undefined; backUrl: string | undefined } {
+  let frontUrl: string | undefined;
+  let backUrl: string | undefined;
+  for (const img of images) {
+    const v =
+      img.params && typeof img.params === "object" && !Array.isArray(img.params)
+        ? (img.params as Record<string, unknown>).view
+        : undefined;
+    if (v === "back" && !backUrl) backUrl = img.url;
+    else if (!frontUrl) frontUrl = img.url;
+    else if (!backUrl) backUrl = img.url;
+  }
+  return { frontUrl, backUrl };
 }
 
 // DELETE /api/chats/[id] — soft-delete.

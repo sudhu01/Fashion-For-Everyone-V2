@@ -12,6 +12,7 @@ import {
 } from "@/lib/errors";
 import { generateImage, GenerationError } from "@/lib/generation";
 import { createLogger } from "@/lib/logger";
+import { extractFacetsFromParams } from "@/lib/promptSanitizer";
 import { take } from "@/lib/rateLimit";
 import { postMessageSchema } from "@/lib/validators";
 
@@ -44,23 +45,28 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
       include: {
         generatedImages: {
           where: { status: "completed" },
-          select: { url: true },
-          take: 1,
+          select: { url: true, params: true, completedAt: true },
+          orderBy: { completedAt: "asc" },
         },
       },
     });
 
     return jsonOk({
-      messages: messages.map((m) => ({
-        id: m.id,
-        chatId: m.chatId,
-        role: m.role,
-        text: m.text,
-        ordering: m.ordering,
-        error: m.error,
-        imageUrl: m.generatedImages[0]?.url,
-        createdAt: m.createdAt.getTime(),
-      })),
+      messages: messages.map((m) => {
+        const { frontUrl, backUrl } = pickViewUrls(m.generatedImages);
+        return {
+          id: m.id,
+          chatId: m.chatId,
+          role: m.role,
+          text: m.text,
+          ordering: m.ordering,
+          error: m.error,
+          imageUrl: frontUrl ?? backUrl,
+          frontImageUrl: frontUrl,
+          backImageUrl: backUrl,
+          createdAt: m.createdAt.getTime(),
+        };
+      }),
     });
   } catch (err) {
     return handleError(err);
@@ -165,8 +171,28 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     // composition can grow into its own module later.
     const systemPrompt = buildSystemPrompt(dbUser);
 
+    // Pull the most recent completed generation for this chat to use as
+    // cross-turn context: its Prompt.params.facets become priorFacets (so
+    // "in brown" inherits the prior garment), and its url becomes the
+    // reference image for img2img if that's enabled upstream. Only touched
+    // on non-first messages — there is nothing to inherit on turn 1.
+    let priorFacets = null;
+    let referenceImageUrl: string | null = null;
+    if (!isFirstMessage) {
+      const priorImage = await prisma.generatedImage.findFirst({
+        where: { userId, status: "completed", message: { chatId } },
+        orderBy: { completedAt: "desc" },
+        select: { url: true, prompt: { select: { params: true } } },
+      });
+      if (priorImage) {
+        referenceImageUrl = priorImage.url || null;
+        priorFacets = extractFacetsFromParams(priorImage.prompt?.params ?? null);
+      }
+    }
+
     let assistantText = "Here's a look I generated for you.";
-    let assistantImageUrl: string | undefined;
+    let assistantFrontImageUrl: string | undefined;
+    let assistantBackImageUrl: string | undefined;
     let errorFlag = false;
 
     log.info("generation_dispatch", {
@@ -174,6 +200,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       chatId,
       messageId: assistantMsg.id,
       promptLen: body.prompt.length,
+      hasPriorFacets: Boolean(priorFacets),
+      hasReferenceImage: Boolean(referenceImageUrl),
     });
 
     try {
@@ -182,13 +210,16 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         prompt: body.prompt,
         systemPrompt,
         messageId: assistantMsg.id,
+        chatContext: { priorFacets, referenceImageUrl },
       });
-      assistantImageUrl = gen.imageUrl;
+      assistantFrontImageUrl = gen.frontUrl;
+      assistantBackImageUrl = gen.backUrl;
       log.info("generation_ok", {
         userId,
         chatId,
         messageId: assistantMsg.id,
-        imageId: gen.image.id,
+        frontImageId: gen.frontImage.id,
+        backImageId: gen.backImage.id,
       });
     } catch (err) {
       errorFlag = true;
@@ -229,7 +260,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         text: finalAssistant.text,
         ordering: finalAssistant.ordering,
         error: finalAssistant.error,
-        imageUrl: assistantImageUrl,
+        imageUrl: assistantFrontImageUrl,
+        frontImageUrl: assistantFrontImageUrl,
+        backImageUrl: assistantBackImageUrl,
         createdAt: finalAssistant.createdAt.getTime(),
       },
       chat: { id: chatId, title: newTitle },
@@ -237,6 +270,26 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   } catch (err) {
     return handleError(err);
   }
+}
+
+// Each assistant message persists two completed GeneratedImage rows (front
+// + back). Split them by the `view` stamped on params, falling back to
+// insertion order when params is missing (legacy single-view rows).
+function pickViewUrls(
+  images: { url: string; params: unknown }[],
+): { frontUrl: string | undefined; backUrl: string | undefined } {
+  let frontUrl: string | undefined;
+  let backUrl: string | undefined;
+  for (const img of images) {
+    const v =
+      img.params && typeof img.params === "object" && !Array.isArray(img.params)
+        ? (img.params as Record<string, unknown>).view
+        : undefined;
+    if (v === "back" && !backUrl) backUrl = img.url;
+    else if (!frontUrl) frontUrl = img.url;
+    else if (!backUrl) backUrl = img.url;
+  }
+  return { frontUrl, backUrl };
 }
 
 function deriveTitle(text: string): string {

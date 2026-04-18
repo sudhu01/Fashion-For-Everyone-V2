@@ -19,7 +19,11 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { createLogger, describeShape } from "@/lib/logger";
-import { sanitizeAndAugmentPrompt, SanitizationError } from "@/lib/promptSanitizer";
+import {
+  type PromptFacets,
+  sanitizeAndAugmentPrompt,
+  SanitizationError,
+} from "@/lib/promptSanitizer";
 
 const log = createLogger("generation");
 
@@ -41,6 +45,28 @@ const POLL_INTERVAL_MS = Number(process.env.FAL_POLL_MS ?? 2_000);
 const DEFAULT_STEPS = Number(process.env.FAL_STEPS ?? 4);
 const DEFAULT_GUIDANCE = Number(process.env.FAL_GUIDANCE ?? 1.0);
 const DEFAULT_IMAGE_SIZE = process.env.FAL_IMAGE_SIZE ?? "portrait_4_3";
+// Image-to-image chaining within a chat. fal serves image-to-image through a
+// DIFFERENT model slug than bare text-to-image (e.g.
+// `fal-ai/flux-lora/image-to-image` vs `fal-ai/flux-lora`) — the t2i endpoint
+// will 422 on `image_url`, so we dispatch to FAL_I2I_MODEL_ID when we have a
+// reference image. Leave FAL_I2I_MODEL_ID unset to disable i2i entirely and
+// fall back to plain text-to-image for every turn.
+const FAL_I2I_MODEL_ID = process.env.FAL_I2I_MODEL_ID ?? "";
+// fal's i2i endpoints come in two request shapes:
+//   • "edit" style (FLUX.2 Klein edit, Kontext, etc.) → `image_urls: [url]`,
+//     no `strength` (the model runs a full structured edit, not a noise-based
+//     re-roll).
+//   • "img2img" style (flux-lora/image-to-image, sdxl img2img, etc.) →
+//     `image_url: url` + `strength`.
+// Auto-detect from the slug so ops only have to set FAL_I2I_MODEL_ID. The
+// override env var is there for the rare case where the slug is ambiguous.
+const I2I_REQUEST_STYLE: "edit" | "img2img" =
+  (process.env.FAL_I2I_STYLE as "edit" | "img2img" | undefined) ??
+  (/\/edit(\/|$)|\bkontext\b/i.test(FAL_I2I_MODEL_ID) ? "edit" : "img2img");
+// Noise strength for img2img (ignored in edit style). Lower = closer to
+// reference, higher = more prompt freedom. 0.7 keeps the same garment
+// recognizable while letting the prompt change sleeve length / color.
+const IMG2IMG_STRENGTH = Number(process.env.FAL_IMG2IMG_STRENGTH ?? 0.7);
 
 const MAX_URL_LEN = 4096;
 const MAX_DATA_URI_LEN = 6 * 1024 * 1024;
@@ -79,6 +105,26 @@ function isAllowedHttpsImageHost(host: string): boolean {
   return ALLOWED_IMAGE_HOSTS.includes(host.toLowerCase());
 }
 
+// Reference-image gate for img2img. Accepts either an https URL on the normal
+// allowlist or a size-bounded image/* data URI (the same two shapes we persist
+// from upstream). Defensive against passing e.g. a stale `blob:` URL or a
+// data URI for an unrelated file type into the upstream request.
+function isReferenceImageAcceptable(value: string): boolean {
+  if (typeof value !== "string" || !value) return false;
+  if (value.startsWith("data:")) {
+    if (value.length > MAX_DATA_URI_LEN) return false;
+    return /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/.test(value);
+  }
+  if (!/^https:\/\//i.test(value) || value.length > MAX_URL_LEN) return false;
+  try {
+    const u = new URL(value);
+    if (u.username || u.password) return false;
+    return isAllowedHttpsImageHost(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export class GenerationError extends Error {
   status: number;
   expose: string;
@@ -89,18 +135,36 @@ export class GenerationError extends Error {
   }
 }
 
+// Cross-turn context the chat route supplies. `priorFacets` lets the sanitizer
+// fill slots the current turn omitted ("in brown" → inherits garment/fit/fabric
+// from the previous turn); `referenceImageUrl` is the prior turn's generated
+// image, passed to fal as `image_url` when img2img is enabled.
+export interface ChatContext {
+  priorFacets?: PromptFacets | null;
+  referenceImageUrl?: string | null;
+}
+
 export interface GenerateOptions {
   userId: string;
   prompt: string;             // raw user prompt — sanitized internally
   systemPrompt?: string;      // stored for audit; not passed to the model
   messageId?: string;
   extraParams?: Record<string, unknown>;
+  chatContext?: ChatContext;
 }
 
 export interface GenerateResult {
   prompt: Prompt;
+  // Front is the "primary" image — kept as `image` / `imageUrl` for back-compat
+  // with older callers (e.g. /api/generate). Both views are always produced
+  // in a single call with a shared seed for visual consistency.
   image: GeneratedImage;
   imageUrl: string;
+  frontImage: GeneratedImage;
+  backImage: GeneratedImage;
+  frontUrl: string;
+  backUrl: string;
+  seed: number;
 }
 
 export function isConfigured(): boolean {
@@ -125,10 +189,13 @@ export async function generateImage(
   }
 
   // Sanitize + augment. Surfaces user-facing 400s for injection, NSFW,
-  // non-fashion, or missing-garment input.
+  // non-fashion, or missing-garment input. priorFacets (if any) let the
+  // sanitizer accept terse follow-ups like "in brown" by inheriting the
+  // previous turn's garment/fit/fabric.
+  const priorFacets = opts.chatContext?.priorFacets ?? null;
   let sanitized;
   try {
-    sanitized = sanitizeAndAugmentPrompt(opts.prompt);
+    sanitized = sanitizeAndAugmentPrompt(opts.prompt, priorFacets);
   } catch (err) {
     if (err instanceof SanitizationError) {
       log.warn("sanitizer_rejected", {
@@ -136,94 +203,288 @@ export async function generateImage(
         messageId: opts.messageId,
         reason: err.message,
         rawLen: opts.prompt.length,
+        hasPriorFacets: Boolean(priorFacets),
       });
       throw new GenerationError(err.status, err.expose, err.message);
     }
     throw err;
   }
 
-  const finalPrompt = sanitized.prompt;
+  // Two independent i2i decisions:
+  //   - front view: i2i from a PRIOR-TURN image when the chat route supplied
+  //     one (so "in brown" re-rolls the previous fitting).
+  //   - back view: i2i from THIS turn's front render, regardless of chat
+  //     context. The LoRA's back-view signal is weaker than its front-view
+  //     signal (base FLUX has a strong "back view of <person>" prior that
+  //     outvotes the LoRA once any OOD design text is present), so rendering
+  //     back as an edit of the matched flat-lay front guarantees composition,
+  //     color, and pattern match — and prevents human models / extra clothing
+  //     from bleeding in.
+  const priorReferenceImageUrl = opts.chatContext?.referenceImageUrl ?? null;
+  const frontUsesI2I = Boolean(
+    FAL_I2I_MODEL_ID &&
+      priorReferenceImageUrl &&
+      isReferenceImageAcceptable(priorReferenceImageUrl),
+  );
+  const backChainsFromFront = Boolean(FAL_I2I_MODEL_ID);
+  const frontModelId = frontUsesI2I ? FAL_I2I_MODEL_ID : FAL_MODEL_ID;
 
-  const loras = LORA_URL ? [{ path: LORA_URL, scale: LORA_STRENGTH }] : [];
-  const inputPayload: Record<string, unknown> = {
-    prompt: finalPrompt,
-    image_size: DEFAULT_IMAGE_SIZE,
-    num_inference_steps: DEFAULT_STEPS,
-    guidance_scale: DEFAULT_GUIDANCE,
-    num_images: 1,
-    enable_safety_checker: true,
-    ...(loras.length ? { loras } : {}),
-    ...((opts.extraParams ?? {}) as Record<string, unknown>),
+  // One random seed shared across both views for the t2i fallback path.
+  // When back chains as i2i from front the seed is less load-bearing (the
+  // reference image dominates composition) but we still pass it for
+  // reproducibility.
+  const seed =
+    typeof opts.extraParams?.seed === "number"
+      ? (opts.extraParams.seed as number) >>> 0
+      : Math.floor(Math.random() * 0xffffffff);
+
+  const buildInputPayload = (
+    promptText: string,
+    mode: "t2i" | "i2i",
+    referenceUrl: string | null,
+  ): Record<string, unknown> => {
+    const loras = LORA_URL ? [{ path: LORA_URL, scale: LORA_STRENGTH }] : [];
+    return {
+      prompt: promptText,
+      image_size: DEFAULT_IMAGE_SIZE,
+      num_inference_steps: DEFAULT_STEPS,
+      guidance_scale: DEFAULT_GUIDANCE,
+      num_images: 1,
+      enable_safety_checker: true,
+      seed,
+      ...(loras.length ? { loras } : {}),
+      ...(mode === "i2i" && referenceUrl
+        ? I2I_REQUEST_STYLE === "edit"
+          ? { image_urls: [referenceUrl] }
+          : { image_url: referenceUrl, strength: IMG2IMG_STRENGTH }
+        : {}),
+      ...((opts.extraParams ?? {}) as Record<string, unknown>),
+    };
   };
 
-  const paramsJson: Prisma.InputJsonValue = {
-    falModel: FAL_MODEL_ID,
-    view: sanitized.view,
+  const buildParamsJson = (
+    view: "front" | "back",
+    promptText: string,
+    mode: "t2i" | "i2i",
+    modelId: string,
+    referenceUrl: string | null,
+  ): Prisma.InputJsonValue => ({
+    falModel: modelId,
+    view,
+    prompt: promptText,
     imageSize: DEFAULT_IMAGE_SIZE,
     steps: DEFAULT_STEPS,
     guidance: DEFAULT_GUIDANCE,
+    seed,
     strippedTermCount: sanitized.stripped.length,
+    facets: sanitized.facets as unknown as Prisma.InputJsonObject,
+    filledFromContext: sanitized.filledFromContext,
     ...(LORA_URL
       ? { lora_url: LORA_URL, lora_strength: LORA_STRENGTH }
       : {}),
+    ...(mode === "i2i"
+      ? {
+          img2img: true,
+          i2iStyle: I2I_REQUEST_STYLE,
+          i2iSource: view === "back" ? "front_of_same_turn" : "prior_turn",
+          ...(I2I_REQUEST_STYLE === "img2img"
+            ? { img2imgStrength: IMG2IMG_STRENGTH }
+            : {}),
+          ...(referenceUrl ? { referenceImageUrlPreview: referenceUrl.slice(0, 80) } : {}),
+        }
+      : {}),
     ...((opts.extraParams ?? {}) as Prisma.InputJsonObject),
-  };
+  });
 
   log.info("call_start", {
     userId: opts.userId,
     messageId: opts.messageId,
-    model: FAL_MODEL_ID,
-    promptLen: finalPrompt.length,
+    frontModel: frontModelId,
+    frontMode: frontUsesI2I ? "i2i" : "t2i",
+    backChainsFromFront,
+    backModel: backChainsFromFront ? FAL_I2I_MODEL_ID : FAL_MODEL_ID,
+    i2iStyle: backChainsFromFront || frontUsesI2I ? I2I_REQUEST_STYLE : undefined,
+    frontPromptLen: sanitized.frontPrompt.length,
+    backPromptLen: sanitized.backPrompt.length,
     rawPromptLen: opts.prompt.length,
     hasLora: Boolean(LORA_URL),
-    view: sanitized.view,
+    requestedView: sanitized.view,
+    seed,
     strippedCount: sanitized.stripped.length,
     hasSystemPrompt: Boolean(opts.systemPrompt),
     hasExtraParams: Boolean(opts.extraParams && Object.keys(opts.extraParams).length),
+    hasPriorFacets: Boolean(priorFacets),
+    filledFromContext: sanitized.filledFromContext,
     allowedHosts: ALLOWED_IMAGE_HOSTS.length,
     timeoutMs: UPSTREAM_TIMEOUT_MS,
   });
 
-  // Persist pending rows first — if fal hangs we still have the paper trail.
+  // One Prompt row per turn — its `text` stores the front-view string since
+  // that's our primary render, but `params` carries both prompts so the full
+  // call can be reproduced. Persist two pending GeneratedImage rows (one per
+  // view) so failures leave a paper trail for each.
+  const backModelId = backChainsFromFront ? FAL_I2I_MODEL_ID : FAL_MODEL_ID;
+  const frontParams = buildParamsJson(
+    "front",
+    sanitized.frontPrompt,
+    frontUsesI2I ? "i2i" : "t2i",
+    frontModelId,
+    frontUsesI2I ? priorReferenceImageUrl : null,
+  );
+  // The back reference URL is filled in after the front render completes;
+  // persisted params just flag that back WILL chain from front so DB
+  // readers can tell this apart from a plain-pair render.
+  const backParams = buildParamsJson(
+    "back",
+    sanitized.backPrompt,
+    backChainsFromFront ? "i2i" : "t2i",
+    backModelId,
+    null,
+  );
   const promptRow = await prisma.prompt.create({
     data: {
       userId: opts.userId,
       messageId: opts.messageId,
-      text: finalPrompt,
+      text: sanitized.frontPrompt,
       rawUserInput: opts.prompt,
-      model: FAL_MODEL_ID,
+      model: frontModelId,
       systemPrompt: opts.systemPrompt,
-      params: paramsJson,
+      params: {
+        ...(frontParams as Prisma.InputJsonObject),
+        backPrompt: sanitized.backPrompt,
+        backModel: backModelId,
+      },
     },
   });
-  const pendingImage = await prisma.generatedImage.create({
+  const pendingFront = await prisma.generatedImage.create({
     data: {
       userId: opts.userId,
       promptId: promptRow.id,
       messageId: opts.messageId,
       url: "",
-      model: FAL_MODEL_ID,
+      model: frontModelId,
       loraUrl: LORA_URL || null,
-      params: paramsJson,
+      params: frontParams,
+      status: "pending",
+    },
+  });
+  const pendingBack = await prisma.generatedImage.create({
+    data: {
+      userId: opts.userId,
+      promptId: promptRow.id,
+      messageId: opts.messageId,
+      url: "",
+      model: backModelId,
+      loraUrl: LORA_URL || null,
+      params: backParams,
       status: "pending",
     },
   });
 
   log.debug("rows_persisted", {
     promptId: promptRow.id,
-    imageId: pendingImage.id,
+    frontImageId: pendingFront.id,
+    backImageId: pendingBack.id,
   });
 
+  // A single AbortController drives the shared timeout covering both calls.
+  // Front renders first so the back call can reference its URL.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-  const submitUrl = `https://queue.fal.run/${encodeFalModelPath(FAL_MODEL_ID)}`;
   const startedAt = Date.now();
 
   try {
+    const frontImage = await runOneUpstreamCall({
+      view: "front",
+      promptText: sanitized.frontPrompt,
+      inputPayload: buildInputPayload(
+        sanitized.frontPrompt,
+        frontUsesI2I ? "i2i" : "t2i",
+        frontUsesI2I ? priorReferenceImageUrl : null,
+      ),
+      pendingImageId: pendingFront.id,
+      activeModelId: frontModelId,
+      useImg2Img: frontUsesI2I,
+      controller,
+      startedAt,
+    });
+
+    // Back view: chain as i2i-edit from the front render when i2i is
+    // configured. The front image anchors composition (flat-lay, no model)
+    // and garment pattern/color, while the prompt rotates to the back view
+    // caption. Fallback to t2i when FAL_I2I_MODEL_ID is unset.
+    const backIsI2I = backChainsFromFront && isReferenceImageAcceptable(frontImage.url);
+    if (backChainsFromFront && !backIsI2I) {
+      log.warn("back_chain_skipped_bad_front_url", {
+        frontUrlPreview: frontImage.url.slice(0, 80),
+      });
+    }
+    const backImage = await runOneUpstreamCall({
+      view: "back",
+      promptText: sanitized.backPrompt,
+      inputPayload: buildInputPayload(
+        sanitized.backPrompt,
+        backIsI2I ? "i2i" : "t2i",
+        backIsI2I ? frontImage.url : null,
+      ),
+      pendingImageId: pendingBack.id,
+      activeModelId: backIsI2I ? backModelId : FAL_MODEL_ID,
+      useImg2Img: backIsI2I,
+      controller,
+      startedAt,
+    });
+
+    log.info("call_success", {
+      promptId: promptRow.id,
+      frontImageId: frontImage.id,
+      backImageId: backImage.id,
+      backMode: backIsI2I ? "i2i" : "t2i",
+      seed,
+      totalMs: Date.now() - startedAt,
+    });
+
+    return {
+      prompt: promptRow,
+      image: frontImage,
+      imageUrl: frontImage.url,
+      frontImage,
+      backImage,
+      frontUrl: frontImage.url,
+      backUrl: backImage.url,
+      seed,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+interface UpstreamCallArgs {
+  view: "front" | "back";
+  promptText: string;
+  inputPayload: Record<string, unknown>;
+  pendingImageId: string;
+  activeModelId: string;
+  useImg2Img: boolean;
+  controller: AbortController;
+  startedAt: number;
+}
+
+// One upstream request → one completed GeneratedImage row. The caller owns
+// the abort controller and the pair of pending rows; this function just
+// submits, polls, extracts, and finalizes the row. Kept in-module because
+// it closes over logger / prisma / constants in a way that doesn't need to
+// be exported.
+async function runOneUpstreamCall(args: UpstreamCallArgs): Promise<GeneratedImage> {
+  const { view, promptText, inputPayload, pendingImageId, activeModelId, useImg2Img, controller, startedAt } = args;
+  const submitUrl = `https://queue.fal.run/${encodeFalModelPath(activeModelId)}`;
+
+  try {
     log.info("upstream_request", {
+      view,
       url: submitUrl,
-      model: FAL_MODEL_ID,
-      promptLen: finalPrompt.length,
+      model: activeModelId,
+      mode: useImg2Img ? "i2i" : "t2i",
+      promptLen: promptText.length,
       paramKeys: Object.keys(inputPayload),
     });
 
@@ -244,24 +505,24 @@ export async function generateImage(
       let bodyText = "";
       try { bodyText = await submitRes.text(); } catch { /* ignore */ }
       log.error("submit_non_ok", {
+        view,
         status: submitRes.status,
         statusText: submitRes.statusText,
         durationMs: submitDurationMs,
         body: bodyText,
       });
-      await markFailed(pendingImage.id, `submit_${submitRes.status}`);
+      await markFailed(pendingImageId, `submit_${submitRes.status}`);
       throw new GenerationError(502, "Upstream generation failed.");
     }
 
     const submitJson = (await submitRes.json()) as unknown;
     log.info("submit_ok", {
+      view,
       httpStatus: submitRes.status,
       durationMs: submitDurationMs,
       shape: describeShape(submitJson),
     });
 
-    // Some fal deployments return the completed result directly from the
-    // queue endpoint when the model is already warm; detect that path.
     const inlineImage = extractImage(submitJson);
     const submitObj = (submitJson ?? {}) as {
       request_id?: unknown;
@@ -273,13 +534,7 @@ export async function generateImage(
       typeof submitObj.request_id === "string" ? submitObj.request_id : undefined;
 
     if (inlineImage) {
-      return await finalize(
-        promptRow,
-        pendingImage.id,
-        inlineImage,
-        requestId,
-        startedAt,
-      );
+      return await finalize(view, pendingImageId, inlineImage, requestId, startedAt);
     }
 
     if (
@@ -288,12 +543,13 @@ export async function generateImage(
       !requestId
     ) {
       log.error("submit_missing_fields", {
+        view,
         shape: describeShape(submitJson),
         hasStatusUrl: typeof submitObj.status_url === "string",
         hasResponseUrl: typeof submitObj.response_url === "string",
         hasRequestId: Boolean(requestId),
       });
-      await markFailed(pendingImage.id, "submit_bad_response");
+      await markFailed(pendingImageId, "submit_bad_response");
       throw new GenerationError(502, "Upstream returned malformed response.");
     }
 
@@ -302,7 +558,7 @@ export async function generateImage(
       requestId,
       controller.signal,
       startedAt,
-      pendingImage.id,
+      pendingImageId,
     );
 
     const responseRes = await fetch(submitObj.response_url, {
@@ -315,16 +571,18 @@ export async function generateImage(
       let bodyText = "";
       try { bodyText = await responseRes.text(); } catch { /* ignore */ }
       log.error("response_non_ok", {
+        view,
         requestId,
         status: responseRes.status,
         body: bodyText,
       });
-      await markFailed(pendingImage.id, `response_${responseRes.status}`);
+      await markFailed(pendingImageId, `response_${responseRes.status}`);
       throw new GenerationError(502, "Upstream response fetch failed.");
     }
 
     const result = (await responseRes.json()) as unknown;
     log.info("response_ok", {
+      view,
       requestId,
       shape: describeShape(result),
       elapsedMs: Date.now() - startedAt,
@@ -333,40 +591,41 @@ export async function generateImage(
     const imageUrl = extractImage(result);
     if (!imageUrl) {
       log.error("no_image_extracted", {
+        view,
         requestId,
         shape: describeShape(result),
       });
-      await markFailed(pendingImage.id, "no_image_returned");
+      await markFailed(pendingImageId, "no_image_returned");
       throw new GenerationError(502, "Model returned no image.");
     }
 
-    return await finalize(promptRow, pendingImage.id, imageUrl, requestId, startedAt);
+    return await finalize(view, pendingImageId, imageUrl, requestId, startedAt);
   } catch (err) {
     if (err instanceof GenerationError) throw err;
     const aborted = err instanceof Error && err.name === "AbortError";
     log.error("upstream_threw", {
+      view,
       aborted,
       durationMs: Date.now() - startedAt,
       err,
     });
-    await markFailed(pendingImage.id, aborted ? "timeout" : "upstream_error");
+    await markFailed(pendingImageId, aborted ? "timeout" : "upstream_error");
     throw new GenerationError(
       aborted ? 504 : 502,
       aborted ? "Generation timed out." : "Upstream error.",
     );
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
 async function finalize(
-  promptRow: Prompt,
+  view: "front" | "back",
   imageId: string,
   imageUrl: string,
   providerJobId: string | undefined,
   startedAt: number,
-): Promise<GenerateResult> {
+): Promise<GeneratedImage> {
   log.info("image_extracted", {
+    view,
     kind: imageUrl.startsWith("data:") ? "data_uri" : "https_url",
     length: imageUrl.length,
     preview: imageUrl.startsWith("data:") ? imageUrl.slice(0, 40) : imageUrl,
@@ -382,13 +641,13 @@ async function finalize(
     },
   });
 
-  log.info("call_success", {
+  log.info("one_call_success", {
+    view,
     imageId: completed.id,
-    promptId: promptRow.id,
     totalMs: Date.now() - startedAt,
   });
 
-  return { prompt: promptRow, image: completed, imageUrl };
+  return completed;
 }
 
 const PENDING_STATUSES = new Set(["IN_QUEUE", "IN_PROGRESS"]);

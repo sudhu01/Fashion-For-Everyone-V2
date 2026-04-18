@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Message } from "@/lib/types";
+import MagnifierImage from "./MagnifierImage";
 
 interface Props {
   messages: Message[];
@@ -70,16 +71,39 @@ function AssistantBubble({ message }: { message: Message }) {
             {message.text}
           </p>
         )}
-        {message.imageUrl && (
-          <div className="mt-4 rounded-xl overflow-hidden bg-surface-container-low">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={message.imageUrl}
-              alt="Generated look"
-              className="w-full h-auto max-h-[520px] object-cover"
-            />
-          </div>
-        )}
+        {(() => {
+          const front = message.frontImageUrl ?? message.imageUrl;
+          const back = message.backImageUrl;
+          if (!front && !back) return null;
+          return (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {front && (
+                <figure className="rounded-xl overflow-hidden bg-surface-container-low">
+                  <MagnifierImage
+                    src={front}
+                    alt="Generated look — front view"
+                    className="w-full h-auto max-h-[520px] object-cover cursor-zoom-in"
+                  />
+                  <figcaption className="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant px-3 py-2">
+                    Front
+                  </figcaption>
+                </figure>
+              )}
+              {back && (
+                <figure className="rounded-xl overflow-hidden bg-surface-container-low">
+                  <MagnifierImage
+                    src={back}
+                    alt="Generated look — back view"
+                    className="w-full h-auto max-h-[520px] object-cover cursor-zoom-in"
+                  />
+                  <figcaption className="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant px-3 py-2">
+                    Back
+                  </figcaption>
+                </figure>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -88,7 +112,7 @@ function AssistantBubble({ message }: { message: Message }) {
 function UserBubble({ message }: { message: Message }) {
   return (
     <div className="flex flex-col items-end gap-3">
-      <div className="bg-primary text-on-primary p-6 rounded-xl rounded-br-none max-w-[85%] shadow-[0_12px_40px_rgba(155,63,0,0.06)]">
+      <div className="bg-primary text-on-primary py-[17px] px-6 rounded-xl rounded-br-none max-w-[85%] shadow-[0_12px_40px_rgba(155,63,0,0.06)]">
         <p className="font-['Manrope'] text-lg leading-relaxed whitespace-pre-wrap break-words">
           {message.text}
         </p>

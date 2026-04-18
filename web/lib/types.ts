@@ -5,6 +5,8 @@ export interface Message {
   role: Role;
   text: string;
   imageUrl?: string;
+  frontImageUrl?: string;
+  backImageUrl?: string;
   createdAt: number;
   error?: boolean;
 }

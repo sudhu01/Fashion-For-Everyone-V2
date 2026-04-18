@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 
 import Sidebar from "@/components/Sidebar";
@@ -44,20 +43,14 @@ export default function ChatPage() {
     });
   }, []);
 
-  // Initial load — list chats, then hydrate the most recent one.
+  // Initial load — list chats for the sidebar, but land on the welcome screen.
+  // A new chat is created only once the user sends a prompt (see handleSend).
   useEffect(() => {
     const ac = new AbortController();
     (async () => {
       try {
         const list = await listChats({ signal: ac.signal });
         setSummaries(list);
-        if (list.length > 0) {
-          const first = list[0]!;
-          setActiveId(first.id);
-          const full = await getChat(first.id, { signal: ac.signal });
-          setChatsById((prev) => ({ ...prev, [first.id]: full }));
-          hydratedRef.current.add(first.id);
-        }
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
         setError((err as Error).message);
@@ -109,25 +102,10 @@ export default function ChatPage() {
 
   const activeChat = activeId ? chatsById[activeId] : null;
 
-  const handleNewChat = async () => {
-    // Don't double-create if the user already has a fresh, empty chat.
-    const blank = sortedSummaries.find((s) => {
-      const full = chatsById[s.id];
-      return full && full.messages.length === 0;
-    });
-    if (blank) {
-      setActiveId(blank.id);
-      return;
-    }
-    try {
-      const chat = await createChat();
-      setChatsById((prev) => ({ ...prev, [chat.id]: chat }));
-      hydratedRef.current.add(chat.id);
-      setSummaryFromChat(chat);
-      setActiveId(chat.id);
-    } catch (err) {
-      setError((err as Error).message);
-    }
+  const handleNewChat = () => {
+    // Just navigate to the welcome screen — the backend chat and sidebar entry
+    // are created lazily in handleSend once the user submits their first prompt.
+    setActiveId(null);
   };
 
   const handleDelete = async (id: string) => {
@@ -244,6 +222,8 @@ export default function ChatPage() {
         role: m.role === "system" ? "assistant" : (m.role as "user" | "assistant"),
         text: m.text,
         imageUrl: m.imageUrl,
+        frontImageUrl: m.frontImageUrl,
+        backImageUrl: m.backImageUrl,
         createdAt: m.createdAt,
         error: m.error,
       })),
@@ -265,12 +245,9 @@ export default function ChatPage() {
       <main className="flex-1 flex flex-col relative h-full bg-surface min-w-0">
         <header className="sticky top-0 z-40 bg-[#f6f6f6]/80 backdrop-blur-xl flex justify-between items-center px-6 h-16 shrink-0">
           <div className="flex items-center gap-4">
-            <Link
-              href="/"
-              className="text-xl font-bold tracking-tighter text-[#2d2f2f] font-headline hover:text-primary transition-colors"
-            >
+            <span className="text-xl font-bold tracking-tighter text-[#2d2f2f] font-headline">
               Fashion For Everyone
-            </Link>
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden md:flex gap-6 mr-6">
